@@ -3,33 +3,25 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        # Passes your host UID/GID into the build so the container user
-        # matches you — files created inside have correct host ownership.
-        # These are read from the .env file (see .env.example).
-        DEV_UID: ${UID}
-        DEV_GID: ${GID}
     container_name: devbox
 
-    # Run as the dev user (matches host UID/GID)
-    user: "${UID}:${GID}"
+    user: "1000:1000"
 
     volumes:
-      # Your repos — edit this path to wherever you keep your projects
+      # Your repos
       - ~/repos:/workspaces
 
       # Git identity
-      - ~/.gitconfig:/root/.gitconfig:ro
+      - ~/.gitconfig:/home/ubuntu/.gitconfig:ro
 
-      # SSH keys (read-only)
-      - ~/.ssh:/root/.ssh:ro
+      # SSH keys
+      - ~/.ssh:/home/ubuntu/.ssh:ro
 
-      # Persist the home directory so shell history, dotfiles,
-      # and per-user tool installs survive container restarts.
-      - devbox-home:/home/${DEV_USER:-ubuntu}
+      # Persist shell history only — everything else is baked into the image
+      - devbox-history:/home/ubuntu/.bash_history
 
     ports:
-      # Node dev servers (Vite, Angular, Next, etc.)
+      # Node / Angular / Vite
       - "3000-3010:3000-3010"
       # .NET Kestrel
       - "5000-5010:5000-5010"
@@ -47,4 +39,4 @@ services:
       - DOTNET_NOLOGO=1
 
 volumes:
-  devbox-home:
+  devbox-history:

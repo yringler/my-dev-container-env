@@ -2,20 +2,13 @@
 # Polyglot Dev Container
 # C# (.NET), Node/TypeScript, Dart/Flutter, Go, Rust, Hugo
 # Base: Ubuntu 24.04 LTS
+# Uses the built-in 'ubuntu' user (UID 1000)
 # =============================================================================
 
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=America/New_York
-
-# -----------------------------------------------------------------------------
-# Create dev user
-# UID/GID passed from docker-compose via build args — matches your host user
-# so bind-mounted files have correct ownership
-# -----------------------------------------------------------------------------
-ARG DEV_UID=1000
-ARG DEV_GID=1000
 
 # -----------------------------------------------------------------------------
 # System packages (root)
@@ -44,16 +37,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Node.js (root) — system-wide via NodeSource
-# This is the default Node. fnm handles per-project overrides if needed.
-# -----------------------------------------------------------------------------
-ENV NODE_VERSION=24
-RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
-# -----------------------------------------------------------------------------
-# Go (root)
+# Go (root) — extracts to /usr/local/go, available to all users
 # -----------------------------------------------------------------------------
 ENV GO_VERSION=1.26.0
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
@@ -62,7 +46,7 @@ RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
 ENV PATH="/usr/local/go/bin:$PATH"
 
 # -----------------------------------------------------------------------------
-# Hugo (root)
+# Hugo (root) — .deb installs to /usr/local/bin, available to all users
 # -----------------------------------------------------------------------------
 ENV HUGO_VERSION=0.159.0
 RUN curl -fsSL "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb" \
@@ -70,10 +54,29 @@ RUN curl -fsSL "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSI
     && dpkg -i /tmp/hugo.deb \
     && rm /tmp/hugo.deb
 
+# =============================================================================
+# Switch to ubuntu user (UID 1000, already exists in base image)
+# Everything below installs into /home/ubuntu/
+# =============================================================================
+USER ubuntu
+ENV HOME=/home/ubuntu
+ENV LOCAL=$HOME/opt
+
 # -----------------------------------------------------------------------------
-# Global npm packages + fnm (dev user)
-# fnm installs to ~/.local/share/fnm and shims to ~/.local/share/fnm/aliases
+# Node.js — installed locally via fnm into ~/opt/fnm
+# fnm manages Node versions entirely in user space, no root needed
 # -----------------------------------------------------------------------------
+ENV FNM_DIR=$LOCAL/fnm
+ENV NODE_VERSION=24
+ENV PATH="$FNM_DIR/aliases/default/bin:$PATH"
+
+RUN curl -fsSL https://fnm.vercel.app/install \
+        | bash -s -- --install-dir $FNM_DIR --skip-shell \
+    && $FNM_DIR/fnm install $NODE_VERSION \
+    && $FNM_DIR/fnm alias $NODE_VERSION default \
+    && $FNM_DIR/fnm default $NODE_VERSION
+
+# Global npm packages — installed into fnm's default Node
 RUN npm install -g \
         typescript \
         ts-node \
@@ -82,18 +85,13 @@ RUN npm install -g \
         yarn \
         @angular/cli \
         prettier \
-        eslint \
-        fnm
-
-# =============================================================================
-# Switch to dev user — everything below installs into ~/.cargo, ~/go, etc.
-# =============================================================================
-USER $DEV_USER
-ENV HOME=/home/$DEV_USER
+        eslint
 
 # -----------------------------------------------------------------------------
-# .NET SDK (root)
+# .NET SDK — installs to ~/.dotnet by default
 # -----------------------------------------------------------------------------
+ENV DOTNET_ROOT=$HOME/.dotnet
+ENV PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 ENV DOTNET_NOLOGO=1
 
@@ -101,7 +99,25 @@ RUN curl -fsSL https://dot.net/v1/dotnet-install.sh \
     | bash -s -- --channel LTS
 
 # -----------------------------------------------------------------------------
-# Go tools (dev user)
+# Rust — installs to ~/.rustup and ~/.cargo
+# -----------------------------------------------------------------------------
+ENV RUSTUP_HOME=$HOME/.rustup
+ENV CARGO_HOME=$HOME/.cargo
+ENV PATH="$HOME/.cargo/bin:$PATH"
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable --no-modify-path \
+    && rustup component add \
+        clippy \
+        rustfmt \
+        rust-analyzer \
+    && cargo install \
+        cargo-watch \
+        cargo-edit \
+        cargo-nextest
+
+# -----------------------------------------------------------------------------
+# Go tools — installs to ~/go/bin
 # -----------------------------------------------------------------------------
 ENV GOPATH=$HOME/go
 ENV PATH="$GOPATH/bin:$PATH"
@@ -111,12 +127,11 @@ RUN go install golang.org/x/tools/gopls@latest \
     && go install honnef.co/go/tools/cmd/staticcheck@latest
 
 # -----------------------------------------------------------------------------
-# Flutter (dev user)
+# Flutter — cloned to ~/opt/flutter
 # -----------------------------------------------------------------------------
-ENV FLUTTER_HOME=$HOME/flutter
-ENV PATH="$FLUTTER_HOME/bin:$PATH"
 ENV FLUTTER_VERSION=3.27.1
-
+ENV FLUTTER_HOME=$LOCAL/flutter
+ENV PATH="$FLUTTER_HOME/bin:$PATH"
 
 RUN git clone --depth 1 --branch $FLUTTER_VERSION \
     https://github.com/flutter/flutter.git $FLUTTER_HOME \
@@ -127,12 +142,23 @@ RUN git clone --depth 1 --branch $FLUTTER_VERSION \
 # Shell profile
 # -----------------------------------------------------------------------------
 RUN echo '' >> ~/.bashrc \
+    && echo '# local opt' >> ~/.bashrc \
+    && echo 'export LOCAL=$HOME/opt' >> ~/.bashrc \
+    && echo '' >> ~/.bashrc \
+    && echo '# fnm' >> ~/.bashrc \
+    && echo 'export FNM_DIR=$LOCAL/fnm' >> ~/.bashrc \
+    && echo 'eval "$($FNM_DIR/fnm env --use-on-cd)"' >> ~/.bashrc \
+    && echo '' >> ~/.bashrc \
+    && echo '# dotnet' >> ~/.bashrc \
+    && echo 'export DOTNET_ROOT=$HOME/.dotnet' >> ~/.bashrc \
+    && echo 'export PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"' >> ~/.bashrc \
+    && echo '' >> ~/.bashrc \
     && echo '# Go' >> ~/.bashrc \
     && echo 'export GOPATH=$HOME/go' >> ~/.bashrc \
     && echo 'export PATH="$GOPATH/bin:$PATH"' >> ~/.bashrc \
     && echo '' >> ~/.bashrc \
-    && echo '# fnm (per-project Node version switching)' >> ~/.bashrc \
-    && echo 'eval "$(fnm env --use-on-cd)"' >> ~/.bashrc
+    && echo '# Flutter' >> ~/.bashrc \
+    && echo 'export PATH="$LOCAL/flutter/bin:$PATH"' >> ~/.bashrc
 
 # -----------------------------------------------------------------------------
 # Working directory
