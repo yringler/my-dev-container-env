@@ -1,17 +1,36 @@
 # =============================================================================
 # Polyglot Dev Container
-# C# (.NET), Node/TypeScript, Dart/Flutter, Go, Rust
+# C# (.NET), Node/TypeScript, Dart/Flutter, Go, Rust, Hugo
 # Base: Ubuntu 24.04 LTS
 # =============================================================================
 
 FROM ubuntu:24.04
 
-# Avoid interactive prompts during build
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=America/New_York
 
 # -----------------------------------------------------------------------------
-# System base packages
+# Version pins — bump these to upgrade
+# -----------------------------------------------------------------------------
+ENV NODE_VERSION=24
+ENV GO_VERSION=1.23.4
+ENV HUGO_VERSION=0.159.0
+ENV FLUTTER_VERSION=3.27.1
+
+# -----------------------------------------------------------------------------
+# Create dev user
+# UID/GID passed from docker-compose via build args — matches your host user
+# so bind-mounted files have correct ownership
+# -----------------------------------------------------------------------------
+ARG DEV_UID=1000
+ARG DEV_GID=1000
+ARG DEV_USER=dev
+
+RUN groupadd -g $DEV_GID $DEV_USER \
+    && useradd -m -u $DEV_UID -g $DEV_GID -s /bin/bash $DEV_USER
+
+# -----------------------------------------------------------------------------
+# System packages (root)
 # -----------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y \
     # Core utilities
@@ -22,27 +41,25 @@ RUN apt-get update && apt-get install -y \
     ca-certificates gnupg libssl-dev \
     # Compression
     zstd \
-    # Shell
+    # Shells
     bash zsh fish \
-    # Editor essentials
+    # Editors
     vim nano \
-    # Network tools
+    # Network
     iputils-ping dnsutils \
-    # Process tools
+    # Process / inspect
     htop tree jq \
     # Python (needed by some toolchains)
     python3 python3-pip \
-    # Font support (Flutter)
-    libglib2.0-dev libgtk-3-dev \
-    # Suggested for flutter
-    libglu1-mesa \
+    # Flutter Linux desktop dependencies
+    libglib2.0-dev libgtk-3-dev libglu1-mesa \
     && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# .NET SDK (latest LTS — currently 8, plus 9)
-# https://learn.microsoft.com/en-us/dotnet/core/install/linux-ubuntu
+# .NET SDK (root)
 # -----------------------------------------------------------------------------
-RUN wget https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb \
+RUN wget https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb \
+        -O /tmp/packages-microsoft-prod.deb \
     && dpkg -i /tmp/packages-microsoft-prod.deb \
     && rm /tmp/packages-microsoft-prod.deb \
     && apt-get update \
@@ -53,18 +70,40 @@ ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 ENV DOTNET_NOLOGO=1
 
 # -----------------------------------------------------------------------------
-# Node.js — via nvm (allows multiple versions)
+# Node.js (root) — system-wide via NodeSource
+# This is the default Node. fnm handles per-project overrides if needed.
 # -----------------------------------------------------------------------------
-ENV NVM_DIR=/root/.nvm
-ENV NODE_VERSION=24.14.0
+RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
-    && . "$NVM_DIR/nvm.sh" \
-    && nvm install $NODE_VERSION \
-    && nvm alias default $NODE_VERSION \
-    && nvm use default \
-    # Global packages
-    && npm install -g \
+# -----------------------------------------------------------------------------
+# Go (root)
+# -----------------------------------------------------------------------------
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
+    | tar -C /usr/local -xzf -
+
+ENV PATH="/usr/local/go/bin:$PATH"
+
+# -----------------------------------------------------------------------------
+# Hugo (root)
+# -----------------------------------------------------------------------------
+RUN curl -fsSL "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb" \
+    -o /tmp/hugo.deb \
+    && dpkg -i /tmp/hugo.deb \
+    && rm /tmp/hugo.deb
+
+# =============================================================================
+# Switch to dev user — everything below installs into ~/.cargo, ~/go, etc.
+# =============================================================================
+USER $DEV_USER
+ENV HOME=/home/$DEV_USER
+
+# -----------------------------------------------------------------------------
+# Global npm packages + fnm (dev user)
+# fnm installs to ~/.local/share/fnm and shims to ~/.local/share/fnm/aliases
+# -----------------------------------------------------------------------------
+RUN npm install -g \
         typescript \
         ts-node \
         tsx \
@@ -72,47 +111,19 @@ RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | b
         yarn \
         @angular/cli \
         prettier \
-        eslint 
-
-# Make node/npm available without sourcing nvm manually
-ENV PATH="$NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH"
+        eslint \
+        fnm
 
 # -----------------------------------------------------------------------------
-# Go
-# https://go.dev/dl/
+# Rust (dev user)
 # -----------------------------------------------------------------------------
-ENV GO_VERSION=1.26.1
+ENV RUSTUP_HOME=$HOME/.rustup
+ENV CARGO_HOME=$HOME/.cargo
+ENV PATH="$HOME/.cargo/bin:$PATH"
 
-RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
-    | tar -C /usr/local -xzf -
-
-ENV GOPATH=/root/go
-ENV PATH="/usr/local/go/bin:$GOPATH/bin:$PATH"
-
-# Common Go tools
-RUN go install golang.org/x/tools/gopls@latest \
-    && go install github.com/go-delve/delve/cmd/dlv@latest \
-    && go install honnef.co/go/tools/cmd/staticcheck@latest
-
-# -----------------------------------------------------------------------------
-# Hugo
-# -----------------------------------------------------------------------------
-ENV HUGO_VERSION=0.159.0
-RUN curl -fsSL "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb" \
-    -o /tmp/hugo.deb \
-    && dpkg -i /tmp/hugo.deb \
-    && rm /tmp/hugo.deb
-
-# -----------------------------------------------------------------------------
-# Rust — via rustup
-# -----------------------------------------------------------------------------
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-    | sh -s -- -y --default-toolchain stable
-
-ENV PATH="/root/.cargo/bin:$PATH"
-
-# Common Rust components & tools
-RUN rustup component add \
+    | sh -s -- -y --default-toolchain stable --no-modify-path \
+    && rustup component add \
         clippy \
         rustfmt \
         rust-analyzer \
@@ -122,28 +133,39 @@ RUN rustup component add \
         cargo-nextest
 
 # -----------------------------------------------------------------------------
-# Dart & Flutter
+# Go tools (dev user)
 # -----------------------------------------------------------------------------
-ENV FLUTTER_VERSION=3.41.5
+ENV GOPATH=$HOME/go
+ENV PATH="$GOPATH/bin:$PATH"
 
-# Flutter SDK
+RUN go install golang.org/x/tools/gopls@latest \
+    && go install github.com/go-delve/delve/cmd/dlv@latest \
+    && go install honnef.co/go/tools/cmd/staticcheck@latest
+
+# -----------------------------------------------------------------------------
+# Flutter (dev user)
+# -----------------------------------------------------------------------------
+ENV FLUTTER_HOME=$HOME/flutter
+ENV PATH="$FLUTTER_HOME/bin:$PATH"
+
 RUN git clone --depth 1 --branch $FLUTTER_VERSION \
-    https://github.com/flutter/flutter.git /opt/flutter \
-    && /opt/flutter/bin/flutter precache --no-ios --no-macos --no-windows \
-    && /opt/flutter/bin/flutter config --no-analytics
-
-ENV PATH="/opt/flutter/bin:$PATH"
+    https://github.com/flutter/flutter.git $FLUTTER_HOME \
+    && flutter precache --no-ios --no-macos --no-windows \
+    && flutter config --no-analytics
 
 # -----------------------------------------------------------------------------
-# Shell config — make all toolchains available in interactive shells
+# Shell profile
 # -----------------------------------------------------------------------------
-RUN echo '\n# nvm' >> /root/.bashrc \
-    && echo 'export NVM_DIR="/root/.nvm"' >> /root/.bashrc \
-    && echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> /root/.bashrc \
-    && echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> /root/.bashrc
+RUN echo '' >> ~/.bashrc \
+    && echo '# Go' >> ~/.bashrc \
+    && echo 'export GOPATH=$HOME/go' >> ~/.bashrc \
+    && echo 'export PATH="$GOPATH/bin:$PATH"' >> ~/.bashrc \
+    && echo '' >> ~/.bashrc \
+    && echo '# fnm (per-project Node version switching)' >> ~/.bashrc \
+    && echo 'eval "$(fnm env --use-on-cd)"' >> ~/.bashrc
 
 # -----------------------------------------------------------------------------
-# Working directory — repos will be mounted here
+# Working directory
 # -----------------------------------------------------------------------------
 WORKDIR /workspaces
 
