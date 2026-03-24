@@ -1,0 +1,47 @@
+services:
+  devbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: devbox
+
+    volumes:
+      # Your repos — edit this path to wherever you keep your projects
+      - ~/dev:/workspaces
+
+      # Git identity
+      - ~/.gitconfig:/root/.gitconfig:ro
+
+      # SSH keys (read-only — for git over SSH, signing, etc.)
+      - ~/.ssh:/root/.ssh:ro
+
+      # Persist the home directory so ad-hoc installs, shell history,
+      # global npm packages, cargo installs, etc. survive container restarts.
+      # Only rebuilt when you explicitly do: docker volume rm devbox-home
+      - devbox-home:/root
+
+    ports:
+      # Node dev servers (Vite, Angular, Next, etc.)
+      - "3000-3010:3000-3010"
+      # .NET Kestrel
+      - "5000-5010:5000-5010"
+      # Go / misc
+      - "8000-8010:8000-8010"
+      # Flutter web
+      - "8080:8080"
+
+    # Keep container alive even with no active terminal
+    stdin_open: true
+    tty: true
+
+    # Restart after Docker daemon restarts (e.g. after reboot)
+    # Change to "no" if you prefer to start it manually
+    restart: unless-stopped
+
+    environment:
+      - DOTNET_CLI_TELEMETRY_OPTOUT=1
+      - DOTNET_NOLOGO=1
+
+volumes:
+  # Named volume — persists between container rebuilds
+  devbox-home:
