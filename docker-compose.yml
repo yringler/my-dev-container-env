@@ -3,22 +3,31 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Passes your host UID/GID into the build so the container user
+        # matches you — files created inside have correct host ownership.
+        # These are read from the .env file (see .env.example).
+        DEV_UID: ${UID}
+        DEV_GID: ${GID}
+        DEV_USER: ${DEV_USER:-dev}
     container_name: devbox
+
+    # Run as the dev user (matches host UID/GID)
+    user: "${UID}:${GID}"
 
     volumes:
       # Your repos — edit this path to wherever you keep your projects
-      - ~/dev:/workspaces
+      - ~/repos:/workspaces
 
       # Git identity
       - ~/.gitconfig:/root/.gitconfig:ro
 
-      # SSH keys (read-only — for git over SSH, signing, etc.)
+      # SSH keys (read-only)
       - ~/.ssh:/root/.ssh:ro
 
-      # Persist the home directory so ad-hoc installs, shell history,
-      # global npm packages, cargo installs, etc. survive container restarts.
-      # Only rebuilt when you explicitly do: docker volume rm devbox-home
-      - devbox-home:/root
+      # Persist the home directory so shell history, dotfiles,
+      # and per-user tool installs survive container restarts.
+      - devbox-home:/home/${DEV_USER:-dev}
 
     ports:
       # Node dev servers (Vite, Angular, Next, etc.)
@@ -30,12 +39,8 @@ services:
       # Flutter web
       - "8080:8080"
 
-    # Keep container alive even with no active terminal
     stdin_open: true
     tty: true
-
-    # Restart after Docker daemon restarts (e.g. after reboot)
-    # Change to "no" if you prefer to start it manually
     restart: unless-stopped
 
     environment:
@@ -43,5 +48,4 @@ services:
       - DOTNET_NOLOGO=1
 
 volumes:
-  # Named volume — persists between container rebuilds
   devbox-home:
