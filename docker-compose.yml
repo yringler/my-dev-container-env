@@ -9,7 +9,7 @@ services:
 
     volumes:
       # Your repos
-      - ~/repos:/workspaces
+      - ~/dev:/workspaces
 
       # Git identity
       - ~/.gitconfig:/home/ubuntu/.gitconfig:ro
