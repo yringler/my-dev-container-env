@@ -9,7 +9,6 @@ services:
         # These are read from the .env file (see .env.example).
         DEV_UID: ${UID}
         DEV_GID: ${GID}
-        DEV_USER: ${DEV_USER:-dev}
     container_name: devbox
 
     # Run as the dev user (matches host UID/GID)
@@ -27,7 +26,7 @@ services:
 
       # Persist the home directory so shell history, dotfiles,
       # and per-user tool installs survive container restarts.
-      - devbox-home:/home/${DEV_USER:-dev}
+      - devbox-home:/home/${DEV_USER:-ubuntu}
 
     ports:
       # Node dev servers (Vite, Angular, Next, etc.)
