@@ -26,8 +26,8 @@ ARG DEV_UID=1000
 ARG DEV_GID=1000
 ARG DEV_USER=dev
 
-RUN groupadd -g $DEV_GID $DEV_USER \
-    && useradd -m -u $DEV_UID -g $DEV_GID -s /bin/bash $DEV_USER
+RUN groupadd $DEV_USER \
+    && useradd -m -u $DEV_UID -g $DEV_GID -s /bin/bash --non-unique $DEV_USER
 
 # -----------------------------------------------------------------------------
 # System packages (root)
