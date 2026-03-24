@@ -98,23 +98,6 @@ ENV DOTNET_NOLOGO=1
 RUN curl -fsSL https://dot.net/v1/dotnet-install.sh \
     | bash -s -- --channel LTS
 
-# -----------------------------------------------------------------------------
-# Rust — installs to ~/.rustup and ~/.cargo
-# -----------------------------------------------------------------------------
-ENV RUSTUP_HOME=$HOME/.rustup
-ENV CARGO_HOME=$HOME/.cargo
-ENV PATH="$HOME/.cargo/bin:$PATH"
-
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-    | sh -s -- -y --default-toolchain stable --no-modify-path \
-    && rustup component add \
-        clippy \
-        rustfmt \
-        rust-analyzer \
-    && cargo install \
-        cargo-watch \
-        cargo-edit \
-        cargo-nextest
 
 # -----------------------------------------------------------------------------
 # Go tools — installs to ~/go/bin
