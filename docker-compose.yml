@@ -22,9 +22,14 @@ services:
       - vscode-server:/home/ubuntu/.vscode-server
 
     ports:
+      # SSH
       - 2222:22
       # Node / Angular / Vite
       - "3000-3010:3000-3010"
+      # wrangler
+      - "1999:1999"
+      # angular
+      - "4200:4200"
       # .NET Kestrel
       - "5000-5010:5000-5010"
       # Go / misc
