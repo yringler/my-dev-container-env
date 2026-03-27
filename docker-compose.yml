@@ -21,22 +21,7 @@ services:
       # VS code extensions are installed in the container. Persist them.
       - vscode-server:/home/ubuntu/.vscode-server
 
-    ports:
-      # SSH
-      - 2222:22
-      # Node / Angular / Vite
-      - "3000-3010:3000-3010"
-      # wrangler
-      - "1999:1999"
-      # angular
-      - "4200:4200"
-      # .NET Kestrel
-      - "5000-5010:5000-5010"
-      # Go / misc
-      - "8000-8010:8000-8010"
-      # Flutter web
-      - "8080:8080"
-
+    network_mode: host
     stdin_open: true
     tty: true
     restart: unless-stopped
