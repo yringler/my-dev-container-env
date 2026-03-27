@@ -10,7 +10,8 @@ services:
       - ~/dev:/home/ubuntu/dev
 
       # Git identity
-      - ~/.gitconfig:/home/ubuntu/.gitconfig:ro
+      # Commented out to allow container to save git creds
+      #- ~/.gitconfig:/home/ubuntu/.gitconfig:ro
 
       # SSH keys
       - ~/.ssh/id_ed25519.pub:/home/ubuntu/.ssh/authorized_keys
