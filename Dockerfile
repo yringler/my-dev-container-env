@@ -154,16 +154,7 @@ RUN apt-get update && apt-get install -y openssh-server \
     && mkdir /run/sshd \
     && ssh-keygen -A
 
-USER ubuntu
-#RUN mkdir -p ~/.ssh && chmod 700 ~/.ssh
-# You'll COPY or mount your public key here:
-#COPY --chown=ubuntu:ubuntu id_rsa.pub /home/ubuntu/.ssh/id_rsa.pub
-
 
 EXPOSE 22
 
-# Switch back to root to start sshd (it requires root to bind port 22)
-USER root
-COPY entrypoint.sh /entrypoint.sh
-#CMD ["/entrypoint.sh"]
 CMD ["/usr/sbin/sshd", "-D"]
