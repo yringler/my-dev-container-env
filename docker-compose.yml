@@ -20,6 +20,9 @@ services:
       # Persist shell history only — everything else is baked into the image
       - devbox-history:/home/ubuntu/.bash_history
 
+      # VS code extensions are installed in the container. Persist them.
+      - vscode-server:/home/ubuntu/.vscode-server
+
     ports:
       # Node / Angular / Vite
       - "3000-3010:3000-3010"
@@ -40,3 +43,4 @@ services:
 
 volumes:
   devbox-history:
+  vscode-server:
