@@ -13,7 +13,7 @@ services:
       - ~/.gitconfig:/home/ubuntu/.gitconfig:ro
 
       # SSH keys
-      - ~/.ssh:/home/ubuntu/.ssh:ro
+      - ~/.ssh/id_ed25519.pub:/home/ubuntu/.ssh/authorized_keys
 
       # Persist shell history only — everything else is baked into the image
       - devbox-history:/home/ubuntu/.bash_history
@@ -22,6 +22,7 @@ services:
       - vscode-server:/home/ubuntu/.vscode-server
 
     ports:
+      - 2222:22
       # Node / Angular / Vite
       - "3000-3010:3000-3010"
       # .NET Kestrel
