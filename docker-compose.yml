@@ -7,7 +7,7 @@ services:
 
     volumes:
       # Your repos
-      - ~/dev:/workspaces
+      - ~/dev:/home/ubuntu/dev
 
       # Git identity
       - ~/.gitconfig:/home/ubuntu/.gitconfig:ro
@@ -43,3 +43,4 @@ services:
 volumes:
   devbox-history:
   vscode-server:
+  zed-server:
