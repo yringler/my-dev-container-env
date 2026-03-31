@@ -2,6 +2,8 @@ name: Publish Container
 
 on:
   push:
+    paths:
+      - Dockerfile
   workflow_dispatch:
 
 env:
