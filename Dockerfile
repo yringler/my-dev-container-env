@@ -1,29 +1,33 @@
 # =============================================================================
 # Polyglot Dev Container
 # C# (.NET), Node/TypeScript, Dart/Flutter, Go, Rust, Hugo
-# Base: Ubuntu 24.04 LTS
-# Uses the built-in 'ubuntu' user (UID 1000)
+# Base: Debian 12 Slim
+#
+# Design decisions:
+#   - All toolchains install to /opt or /usr/local (root filesystem),
+#     keeping $HOME clean so it can be a persistent volume.
+#   - Non-root user 'dev' (UID 1000) for bind-mount compatibility.
+#   - Layers ordered slow-changing (system, Go, Rust) → fast-changing
+#     (Node packages, Flutter, dotnet) for cache efficiency.
 # =============================================================================
 
-FROM ubuntu:24.04
+FROM debian:12-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=America/New_York
 
 # -----------------------------------------------------------------------------
-# System packages (root)
+# 1. System packages (changes rarely)
 # -----------------------------------------------------------------------------
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     # Core utilities
-    curl wget git unzip zip tar xz-utils \
+    curl wget git unzip zip tar xz-utils ca-certificates gnupg \
     # Build tools
-    build-essential cmake pkg-config \
-    # SSL / crypto
-    ca-certificates gnupg libssl-dev \
+    build-essential cmake pkg-config libssl-dev \
     # Compression
     zstd \
     # Shells
-    bash zsh fish \
+    bash zsh \
     # Editors
     vim nano \
     # Network
@@ -37,16 +41,34 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Go (root) — extracts to /usr/local/go, available to all users
+# 2. Go — /usr/local/go (changes rarely)
 # -----------------------------------------------------------------------------
-ENV GO_VERSION=1.26.0
+ENV GO_VERSION=1.23.4
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
     | tar -C /usr/local -xzf -
 
 ENV PATH="/usr/local/go/bin:$PATH"
+ENV GOPATH=/opt/go
+ENV PATH="$GOPATH/bin:$PATH"
+
+RUN go install golang.org/x/tools/gopls@latest \
+    && go install github.com/go-delve/delve/cmd/dlv@latest \
+    && go install honnef.co/go/tools/cmd/staticcheck@latest
 
 # -----------------------------------------------------------------------------
-# Hugo (root) — .deb installs to /usr/local/bin, available to all users
+# 3. Rust — /opt/rust (changes rarely)
+# -----------------------------------------------------------------------------
+ENV RUSTUP_HOME=/opt/rust/rustup
+ENV CARGO_HOME=/opt/rust/cargo
+ENV PATH="/opt/rust/cargo/bin:$PATH"
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable --no-modify-path \
+    && rustup component add clippy rustfmt rust-analyzer \
+    && cargo install cargo-watch cargo-edit cargo-nextest
+
+# -----------------------------------------------------------------------------
+# 4. Hugo — /usr/local/bin (changes rarely)
 # -----------------------------------------------------------------------------
 ENV HUGO_VERSION=0.159.0
 RUN curl -fsSL "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb" \
@@ -54,19 +76,21 @@ RUN curl -fsSL "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSI
     && dpkg -i /tmp/hugo.deb \
     && rm /tmp/hugo.deb
 
-# =============================================================================
-# Switch to ubuntu user (UID 1000, already exists in base image)
-# Everything below installs into /home/ubuntu/
-# =============================================================================
-USER ubuntu
-ENV HOME=/home/ubuntu
-ENV LOCAL=$HOME/opt
+# -----------------------------------------------------------------------------
+# 5. .NET SDK — /opt/dotnet (changes moderately)
+# -----------------------------------------------------------------------------
+ENV DOTNET_ROOT=/opt/dotnet
+ENV PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
+ENV DOTNET_NOLOGO=1
+
+RUN curl -fsSL https://dot.net/v1/dotnet-install.sh \
+    | bash -s -- --channel LTS --install-dir $DOTNET_ROOT
 
 # -----------------------------------------------------------------------------
-# Node.js — installed locally via fnm into ~/opt/fnm
-# fnm manages Node versions entirely in user space, no root needed
+# 6. Node.js via fnm — /opt/fnm (changes moderately)
 # -----------------------------------------------------------------------------
-ENV FNM_DIR=$LOCAL/fnm
+ENV FNM_DIR=/opt/fnm
 ENV NODE_VERSION=24
 ENV PATH="$FNM_DIR/aliases/default/bin:$PATH"
 
@@ -76,90 +100,58 @@ RUN curl -fsSL https://fnm.vercel.app/install \
     && $FNM_DIR/fnm alias $NODE_VERSION default \
     && $FNM_DIR/fnm default $NODE_VERSION
 
-# Global npm packages — installed into fnm's default Node
+# 7. Global npm packages (changes most often among Node layers)
 RUN npm install -g \
-        typescript \
-        ts-node \
-        tsx \
-        pnpm \
-        yarn \
+        typescript ts-node tsx \
+        pnpm yarn \
         @angular/cli \
-        prettier \
-        eslint
+        prettier eslint
 
 # -----------------------------------------------------------------------------
-# .NET SDK — installs to ~/.dotnet by default
-# -----------------------------------------------------------------------------
-ENV DOTNET_ROOT=$HOME/.dotnet
-ENV PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"
-ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
-ENV DOTNET_NOLOGO=1
-
-RUN curl -fsSL https://dot.net/v1/dotnet-install.sh \
-    | bash -s -- --channel LTS
-
-
-# -----------------------------------------------------------------------------
-# Go tools — installs to ~/go/bin
-# -----------------------------------------------------------------------------
-ENV GOPATH=$HOME/go
-ENV PATH="$GOPATH/bin:$PATH"
-
-RUN go install golang.org/x/tools/gopls@latest \
-    && go install github.com/go-delve/delve/cmd/dlv@latest \
-    && go install honnef.co/go/tools/cmd/staticcheck@latest
-
-# -----------------------------------------------------------------------------
-# Flutter — cloned to ~/opt/flutter
+# 8. Flutter — /opt/flutter (changes moderately)
 # -----------------------------------------------------------------------------
 ENV FLUTTER_VERSION=3.27.1
-ENV FLUTTER_HOME=$LOCAL/flutter
+ENV FLUTTER_HOME=/opt/flutter
 ENV PATH="$FLUTTER_HOME/bin:$PATH"
 
 RUN git clone --depth 1 --branch $FLUTTER_VERSION \
-    https://github.com/flutter/flutter.git $FLUTTER_HOME \
+        https://github.com/flutter/flutter.git $FLUTTER_HOME \
     && flutter precache --no-ios --no-macos --no-windows \
     && flutter config --no-analytics
 
 # -----------------------------------------------------------------------------
-# Shell profile
+# 9. Non-root user (changes rarely, but depends on everything above)
 # -----------------------------------------------------------------------------
-RUN echo '' >> ~/.bashrc \
-    && echo '# local opt' >> ~/.bashrc \
-    && echo 'export LOCAL=$HOME/opt' >> ~/.bashrc \
-    && echo '' >> ~/.bashrc \
-    && echo '# fnm' >> ~/.bashrc \
-    && echo 'export FNM_DIR=$LOCAL/fnm' >> ~/.bashrc \
-    && echo 'eval "$($FNM_DIR/fnm env --use-on-cd)"' >> ~/.bashrc \
-    && echo '' >> ~/.bashrc \
-    && echo '# dotnet' >> ~/.bashrc \
-    && echo 'export DOTNET_ROOT=$HOME/.dotnet' >> ~/.bashrc \
-    && echo 'export PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"' >> ~/.bashrc \
-    && echo '' >> ~/.bashrc \
-    && echo '# Go' >> ~/.bashrc \
-    && echo 'export GOPATH=$HOME/go' >> ~/.bashrc \
-    && echo 'export PATH="$GOPATH/bin:$PATH"' >> ~/.bashrc \
-    && echo '' >> ~/.bashrc \
-    && echo '# Flutter' >> ~/.bashrc \
-    && echo 'export PATH="$LOCAL/flutter/bin:$PATH"' >> ~/.bashrc
+RUN groupadd -g 1000 dev \
+    && useradd -u 1000 -g dev -m -s /bin/bash dev \
+    && chmod -R a+rX /opt
 
-# -----------------------------------------------------------------------------
-# Working directory
-# -----------------------------------------------------------------------------
+USER dev
+ENV HOME=/home/dev
+
+# Shell profile — only runtime env, no installed software lives here
+RUN { \
+    echo ''; \
+    echo '# fnm'; \
+    echo 'eval "$(/opt/fnm/fnm env --use-on-cd)"'; \
+    echo ''; \
+    echo '# dotnet'; \
+    echo 'export DOTNET_ROOT=/opt/dotnet'; \
+    echo 'export PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"'; \
+    echo ''; \
+    echo '# Go'; \
+    echo 'export GOPATH=/opt/go'; \
+    echo 'export PATH="$GOPATH/bin:$PATH"'; \
+    echo ''; \
+    echo '# Rust'; \
+    echo 'export RUSTUP_HOME=/opt/rust/rustup'; \
+    echo 'export CARGO_HOME=/opt/rust/cargo'; \
+    echo 'export PATH="/opt/rust/cargo/bin:$PATH"'; \
+    echo ''; \
+    echo '# Flutter'; \
+    echo 'export PATH="/opt/flutter/bin:$PATH"'; \
+} >> ~/.bashrc
+
 WORKDIR /workspaces
 
-USER root
-RUN apt-get update && apt-get install -y openssh-server \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir /run/sshd \
-    && ssh-keygen -A
-
-
-EXPOSE 22
-
-# Github auth
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /usr/share/keyrings/githubcli-archive-keyring.gpg > /dev/null
-RUN echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-RUN apt update && apt install gh -y
-
-CMD ["/usr/sbin/sshd", "-D", "-p", "2222"]
+CMD ["/bin/bash"]

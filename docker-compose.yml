@@ -7,20 +7,20 @@ services:
 
     volumes:
       # Your repos
-      - ~/dev:/home/ubuntu/dev
+      - ~/dev:/home/dev/dev
 
       # Git identity
       # Commented out to allow container to save git creds
-      #- ~/.gitconfig:/home/ubuntu/.gitconfig:ro
+      #- ~/.gitconfig:/home/dev/.gitconfig:ro
 
       # SSH keys
-      - ~/.ssh/id_ed25519.pub:/home/ubuntu/.ssh/authorized_keys
+      - ~/.ssh/id_ed25519.pub:/home/dev/.ssh/authorized_keys
 
       # Persist shell history only — everything else is baked into the image
-      - devbox-history:/home/ubuntu/.bash_history
+      - devbox-history:/home/dev/.bash_history
 
       # VS code extensions are installed in the container. Persist them.
-      - vscode-server:/home/ubuntu/.vscode-server
+      - vscode-server:/home/dev/.vscode-server
 
     network_mode: host
     stdin_open: true
@@ -34,4 +34,3 @@ services:
 volumes:
   devbox-history:
   vscode-server:
-  zed-server:
