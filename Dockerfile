@@ -38,6 +38,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip \
     # Flutter Linux desktop dependencies
     libglib2.0-dev libgtk-3-dev libglu1-mesa \
+    # SSH server (for Zed remote)
+    openssh-server \
     && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
@@ -154,4 +156,15 @@ RUN { \
 
 WORKDIR /workspaces
 
-CMD ["/bin/bash"]
+# -----------------------------------------------------------------------------
+# 10. SSH server — runs as root, serves dev user (for Zed remote)
+# -----------------------------------------------------------------------------
+USER root
+RUN mkdir -p /run/sshd \
+    && ssh-keygen -A \
+    && sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config \
+    && sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+
+EXPOSE 2222
+
+CMD ["/usr/sbin/sshd", "-D", "-p", "2222", "-e"]

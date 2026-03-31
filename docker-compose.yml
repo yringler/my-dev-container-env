@@ -8,6 +8,8 @@ services:
     volumes:
       # Persist entire home directory
       - devbox-home:/home/dev
+      # SSH authorized keys (bind-mount over the volume path)
+      - ~/.ssh/id_ed25519.pub:/home/dev/.ssh/authorized_keys:ro
 
     network_mode: host
     stdin_open: true
