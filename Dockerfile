@@ -66,8 +66,7 @@ ENV PATH="/opt/rust/cargo/bin:$PATH"
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable --no-modify-path \
-    && rustup component add clippy rustfmt rust-analyzer \
-    && cargo install cargo-watch cargo-edit cargo-nextest
+    && rustup component add clippy rustfmt rust-analyzer
 
 # -----------------------------------------------------------------------------
 # 4. Hugo — /usr/local/bin (changes rarely)
